@@ -6,13 +6,17 @@ on:
     # Executa diariamente às 06:00 UTC
     - cron: '0 6 * * *'
   workflow_dispatch:
-    # Permite execução manual
     inputs:
       force_process:
         description: 'Forçar processamento mesmo sem mudanças'
         required: false
         default: false
         type: boolean
+      time_offset:
+        description: 'Offset de tempo personalizado (segundos)'
+        required: false
+        default: '30'
+        type: string
 
 permissions:
   contents: write
@@ -26,16 +30,17 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
       with:
-        fetch-depth: 0  # Buscar histórico completo para comparações
+        fetch-depth: 0
         
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.11'
-        cache: 'pip'  # Cache das dependências pip
+        cache: 'pip'
         
-    - name: Create logs directory
-      run: mkdir -p logs data/processed
+    - name: Create required directories
+      run: |
+        mkdir -p logs data/raw data/processed
         
     - name: Install dependencies
       run: |
@@ -45,7 +50,6 @@ jobs:
     - name: Check source changes
       id: check-changes
       run: |
-        # Verificar se houve mudanças na fonte EPG nas últimas 24h
         if [ -f "data/last_source_check.txt" ]; then
           LAST_CHECK=$(cat data/last_source_check.txt)
           echo "last_check=$LAST_CHECK" >> $GITHUB_OUTPUT
@@ -56,13 +60,12 @@ jobs:
         
     - name: Run processor
       run: |
-        # Adicionar o diretório src ao PYTHONPATH e executar do diretório raiz
         export PYTHONPATH="${PYTHONPATH}:${{ github.workspace }}/src"
-        cd src
+        # Executar do diretório raiz onde está o run.py
         if [ "${{ inputs.force_process }}" == "true" ]; then
-          python run.py --force --log-level DEBUG
+          python run.py --force --log-level DEBUG --offset ${{ inputs.time_offset || '30' }}
         else
-          python run.py --log-level INFO
+          python run.py --log-level INFO --offset ${{ inputs.time_offset || '30' }}
         fi
         
     - name: Generate processing report
@@ -72,6 +75,7 @@ jobs:
         echo "" >> processing_report.md
         echo "**Data:** $(date)" >> processing_report.md
         echo "**Commit:** ${{ github.sha }}" >> processing_report.md
+        echo "**Offset aplicado:** ${{ inputs.time_offset || '30' }} segundos" >> processing_report.md
         echo "" >> processing_report.md
         
         if [ -f "adjusted_schedule.xml.gz" ]; then
@@ -105,9 +109,9 @@ jobs:
         git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
         git config --local user.name "github-actions[bot]"
         
-        # Commit com informações detalhadas
         git commit -m "🤖 Processamento EPG automático - $(date +'%Y-%m-%d %H:%M:%S')" \
                    -m "Arquivos alterados: ${{ steps.verify-changed-files.outputs.files }}" \
+                   -m "Offset aplicado: ${{ inputs.time_offset || '30' }} segundos" \
                    -m "Workflow: ${{ github.workflow }}" \
                    -m "Run ID: ${{ github.run_id }}"
         
@@ -143,7 +147,7 @@ jobs:
       uses: actions/github-script@v7
       with:
         script: |
-          const title = `❌ Falha no processamento EPG - ${new Date().toISOString().split('T')[0]}`;
+          const title = `❌ Falha no processamento EPG - ${new Date().toISOString().split('2024-01-01T')[0]}`;
           const body = `
           ## 🚨 Erro no Processamento EPG
           
@@ -151,6 +155,7 @@ jobs:
           **Run ID:** ${{ github.run_id }}
           **Commit:** ${{ github.sha }}
           **Data:** ${new Date().toISOString()}
+          **Offset:** ${{ inputs.time_offset || '30' }} segundos
           
           ### 🔍 Detalhes
           - Executado em: ${{ runner.os }}
@@ -183,10 +188,11 @@ jobs:
       run: |
         echo "## 📊 Resumo do Processamento" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "| Item | Status |" >> $GITHUB_STEP_SUMMARY
+        echo "| Item | Status |" >> $GITHUB_STEP_2024-01-01 |" >> $GITHUB_STEP_SUMMARY
         echo "|------|---------|" >> $GITHUB_STEP_SUMMARY
         echo "| Processamento | ${{ job.status }} |" >> $GITHUB_STEP_SUMMARY
         echo "| Arquivos alterados | ${{ steps.verify-changed-files.outputs.changed }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Offset aplicado | ${{ inputs.time_offset || '30' }}s |" >> $GITHUB_STEP_SUMMARY
         
         if [ -f "adjusted_schedule.xml.gz" ]; then
           FILE_SIZE=$(stat -c%s "adjusted_schedule.xml.gz")
@@ -224,7 +230,7 @@ jobs:
           });
           
           const cutoffDate = new Date();
-          cutoffDate.setDate(cutoffDate.getDate() - 30); // 30 dias atrás
+          cutoffDate.setDate(cutoffDate.getDate() - 30);
           
           for (const artifact of artifacts.data.artifacts) {
             if (new Date(artifact.created_at) < cutoffDate) {
