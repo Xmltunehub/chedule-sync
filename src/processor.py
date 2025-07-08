@@ -125,27 +125,37 @@ class ScheduleProcessor:
             logger.error(f"Erro no processamento: {e}")
             raise
     
-    def create_symlinks(self, processed_path: str):
+    def create_output_files(self, processed_path: str):
         """
-        Cria symlinks para os arquivos mais recentes
+        Cria arquivos de saída na pasta raiz e symlinks
         """
         try:
-            # Symlink para XML
+            # Arquivo comprimido na pasta raiz
+            root_gz_path = "adjusted_schedule.xml.gz"
+            compressed_source = processed_path + ".gz"
+            
+            if os.path.exists(compressed_source):
+                # Copiar para pasta raiz
+                import shutil
+                shutil.copy2(compressed_source, root_gz_path)
+                logger.info(f"Arquivo principal criado: {root_gz_path}")
+            
+            # Symlink para XML na pasta processed
             latest_xml = os.path.join(self.processed_dir, "latest.xml")
             if os.path.exists(latest_xml):
                 os.remove(latest_xml)
             os.symlink(os.path.basename(processed_path), latest_xml)
             
-            # Symlink para XML comprimido
+            # Symlink para XML comprimido na pasta processed
             latest_gz = os.path.join(self.processed_dir, "latest.xml.gz")
             if os.path.exists(latest_gz):
                 os.remove(latest_gz)
             os.symlink(os.path.basename(processed_path) + ".gz", latest_gz)
             
-            logger.info("Symlinks criados para arquivos mais recentes")
+            logger.info("Arquivos de saída e symlinks criados")
             
         except Exception as e:
-            logger.warning(f"Erro ao criar symlinks: {e}")
+            logger.warning(f"Erro ao criar arquivos de saída: {e}")
     
     def generate_report(self, output_path: str):
         """Gera relatório de processamento"""
@@ -200,8 +210,8 @@ class ScheduleProcessor:
                 # Processar XML
                 output_path = self.process_schedules(source_path)
                 
-                # Criar symlinks
-                self.create_symlinks(output_path)
+                # Criar arquivos de saída na raiz e symlinks
+                self.create_output_files(output_path)
                 
                 # Gerar relatório
                 self.generate_report(output_path)
