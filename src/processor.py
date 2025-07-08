@@ -3,9 +3,10 @@ import logging
 from datetime import datetime
 from typing import Dict, Any, Tuple
 
-from .downloader import SourceDownloader
-from .xml_handler import XmlTimeAdjuster
-from .utils import load_config, save_config, validate_config, create_processing_report, ensure_directories
+# Imports corrigidos - usar imports absolutos em vez de relativos
+from downloader import SourceDownloader
+from xml_handler import XmlTimeAdjuster
+from utils import load_config, save_config, validate_config, create_processing_report, ensure_directories
 
 logger = logging.getLogger(__name__)
 
@@ -144,13 +145,19 @@ class ScheduleProcessor:
             latest_xml = os.path.join(self.processed_dir, "latest.xml")
             if os.path.exists(latest_xml):
                 os.remove(latest_xml)
-            os.symlink(os.path.basename(processed_path), latest_xml)
+            
+            # Usar caminho relativo para symlink
+            rel_path = os.path.relpath(processed_path, self.processed_dir)
+            os.symlink(rel_path, latest_xml)
             
             # Symlink para XML comprimido na pasta processed
             latest_gz = os.path.join(self.processed_dir, "latest.xml.gz")
             if os.path.exists(latest_gz):
                 os.remove(latest_gz)
-            os.symlink(os.path.basename(processed_path) + ".gz", latest_gz)
+            
+            # Usar caminho relativo para symlink
+            rel_path_gz = os.path.relpath(processed_path + ".gz", self.processed_dir)
+            os.symlink(rel_path_gz, latest_gz)
             
             logger.info("Arquivos de saída e symlinks criados")
             
