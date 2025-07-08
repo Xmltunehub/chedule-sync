@@ -1,1 +1,217 @@
+import os
+import logging
+from datetime import datetime
+from typing import Dict, Any, Tuple
 
+from .downloader import SourceDownloader
+from .xml_handler import XmlTimeAdjuster
+from .utils import load_config, save_config, validate_config, create_processing_report, ensure_directories
+
+logger = logging.getLogger(__name__)
+
+class ScheduleProcessor:
+    def __init__(self, config_path: str = "config/channel-offsets.json"):
+        self.config_path = config_path
+        self.config = None
+        self.downloader = None
+        self.xml_adjuster = None
+        
+        # Diretórios
+        self.data_dir = "data"
+        self.raw_dir = os.path.join(self.data_dir, "raw")
+        self.processed_dir = os.path.join(self.data_dir, "processed")
+        self.logs_dir = "logs"
+        
+        # Garantir que diretórios existem
+        ensure_directories([self.raw_dir, self.processed_dir, self.logs_dir])
+        
+    def load_configuration(self):
+        """Carrega e valida configuração"""
+        logger.info("Carregando configuração...")
+        
+        try:
+            self.config = load_config(self.config_path)
+            
+            if not validate_config(self.config):
+                raise ValueError("Configuração inválida")
+            
+            logger.info(f"Configuração carregada: {len(self.config['channels'])} canais configurados")
+            
+        except Exception as e:
+            logger.error(f"Erro ao carregar configuração: {e}")
+            raise
+    
+    def initialize_components(self):
+        """Inicializa componentes do processador"""
+        if not self.config:
+            raise ValueError("Configuração não carregada")
+        
+        # URL da fonte (pode ser movida para config se necessário)
+        source_url = "https://epgshare01.online/epgshare01/epg_ripper_PT1.xml.gz"
+        
+        # Inicializar downloader
+        self.downloader = SourceDownloader(source_url, self.raw_dir)
+        
+        # Inicializar ajustador XML
+        self.xml_adjuster = XmlTimeAdjuster()
+        
+        logger.info("Componentes inicializados")
+    
+    def download_source(self, force: bool = False) -> Tuple[bool, str]:
+        """
+        Baixa arquivo fonte
+        
+        Returns:
+            Tuple[bool, str]: (foi_atualizado, caminho_arquivo)
+        """
+        logger.info("Verificando atualizações da fonte...")
+        
+        try:
+            updated, file_path = self.downloader.download_and_extract(force=force)
+            
+            if updated:
+                logger.info("Nova versão da fonte baixada")
+            else:
+                logger.info("Fonte já está atualizada")
+            
+            return updated, file_path
+            
+        except Exception as e:
+            logger.error(f"Erro no download: {e}")
+            raise
+    
+    def process_schedules(self, input_path: str) -> str:
+        """
+        Processa arquivo XML aplicando ajustes de tempo
+        
+        Args:
+            input_path: Caminho do arquivo de entrada
+            
+        Returns:
+            str: Caminho do arquivo processado
+        """
+        logger.info("Iniciando processamento de horários...")
+        
+        try:
+            # Gerar nome do arquivo de saída
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_filename = f"schedule_adjusted_{timestamp}.xml"
+            output_path = os.path.join(self.processed_dir, output_filename)
+            
+            # Extrair configurações de offset
+            channel_offsets = {}
+            for channel_id, config in self.config['channels'].items():
+                channel_offsets[channel_id] = config['offset']
+            
+            default_offset = self.config['default_offset']
+            
+            # Processar XML
+            self.xml_adjuster.process_xml(
+                input_path=input_path,
+                output_path=output_path,
+                channel_offsets=channel_offsets,
+                default_offset=default_offset
+            )
+            
+            # Criar versão comprimida
+            compressed_path = output_path + ".gz"
+            self.xml_adjuster.create_compressed_output(output_path, compressed_path)
+            
+            logger.info(f"Processamento concluído: {output_path}")
+            
+            return output_path
+            
+        except Exception as e:
+            logger.error(f"Erro no processamento: {e}")
+            raise
+    
+    def create_symlinks(self, processed_path: str):
+        """
+        Cria symlinks para os arquivos mais recentes
+        """
+        try:
+            # Symlink para XML
+            latest_xml = os.path.join(self.processed_dir, "latest.xml")
+            if os.path.exists(latest_xml):
+                os.remove(latest_xml)
+            os.symlink(os.path.basename(processed_path), latest_xml)
+            
+            # Symlink para XML comprimido
+            latest_gz = os.path.join(self.processed_dir, "latest.xml.gz")
+            if os.path.exists(latest_gz):
+                os.remove(latest_gz)
+            os.symlink(os.path.basename(processed_path) + ".gz", latest_gz)
+            
+            logger.info("Symlinks criados para arquivos mais recentes")
+            
+        except Exception as e:
+            logger.warning(f"Erro ao criar symlinks: {e}")
+    
+    def generate_report(self, output_path: str):
+        """Gera relatório de processamento"""
+        try:
+            stats = self.xml_adjuster.get_processing_stats()
+            
+            # Adicionar informações do arquivo
+            if os.path.exists(output_path):
+                stats['output_file'] = output_path
+                stats['output_size_mb'] = os.path.getsize(output_path) / (1024 * 1024)
+            
+            # Informações da fonte
+            file_info = self.downloader.get_file_info()
+            stats['source_info'] = file_info
+            
+            # Salvar relatório
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            report_path = os.path.join(self.logs_dir, f"processing_report_{timestamp}.json")
+            create_processing_report(stats, report_path)
+            
+            logger.info(f"Relatório gerado: {report_path}")
+            
+        except Exception as e:
+            logger.error(f"Erro ao gerar relatório: {e}")
+    
+    def run(self, force_download: bool = False) -> bool:
+        """
+        Executa processo completo
+        
+        Args:
+            force_download: Força download mesmo sem alterações
+            
+        Returns:
+            bool: True se processamento foi executado com sucesso
+        """
+        try:
+            logger.info("=== Iniciando processamento de horários ===")
+            
+            # Carregar configuração
+            self.load_configuration()
+            
+            # Inicializar componentes
+            self.initialize_components()
+            
+            # Baixar fonte
+            updated, source_path = self.download_source(force=force_download)
+            
+            # Processar se houve atualização ou forçado
+            if updated or force_download:
+                logger.info("Processando horários...")
+                
+                # Processar XML
+                output_path = self.process_schedules(source_path)
+                
+                # Criar symlinks
+                self.create_symlinks(output_path)
+                
+                # Gerar relatório
+                self.generate_report(output_path)
+                
+                logger.info("=== Processamento concluído com sucesso ===")
+                return True
+            else:
+                logger.info("Nenhum processamento necessário - fonte não foi atualizada")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Erro no processamento: {e}")
+            raise
