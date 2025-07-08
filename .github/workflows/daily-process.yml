@@ -14,6 +14,10 @@ on:
         default: false
         type: boolean
 
+permissions:
+  contents: write
+  issues: write
+
 jobs:
   process-xml:
     runs-on: ubuntu-latest
@@ -52,13 +56,14 @@ jobs:
         
     - name: Run processor
       run: |
+        # Adicionar o diretório src ao PYTHONPATH e executar do diretório raiz
+        export PYTHONPATH="${PYTHONPATH}:${{ github.workspace }}/src"
+        cd src
         if [ "${{ inputs.force_process }}" == "true" ]; then
           python run.py --force --log-level DEBUG
         else
           python run.py --log-level INFO
         fi
-      env:
-        PYTHONPATH: ${{ github.workspace }}/src
         
     - name: Generate processing report
       if: always()
@@ -115,7 +120,7 @@ jobs:
         
     - name: Upload processing artifacts
       if: always()
-      uses: actions/upload-artifact@v4  # ✅ Versão atualizada
+      uses: actions/upload-artifact@v4
       with:
         name: processing-logs-${{ github.run_id }}
         path: |
@@ -127,7 +132,7 @@ jobs:
         
     - name: Upload processed XML
       if: success() && hashFiles('adjusted_schedule.xml.gz') != ''
-      uses: actions/upload-artifact@v4  # ✅ Versão atualizada
+      uses: actions/upload-artifact@v4
       with:
         name: processed-xml-${{ github.run_id }}
         path: adjusted_schedule.xml.gz
@@ -193,7 +198,6 @@ jobs:
         echo "- [Artifacts desta execução](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
         echo "- [Histórico de execuções](https://github.com/${{ github.repository }}/actions/workflows/daily-process.yml)" >> $GITHUB_STEP_SUMMARY
 
-# Workflow adicional para limpeza de artifacts antigos
 ---
 name: Cleanup Old Artifacts
 
@@ -201,6 +205,9 @@ on:
   schedule:
     - cron: '0 2 * * 0'  # Domingo às 02:00 UTC
   workflow_dispatch:
+
+permissions:
+  actions: write
 
 jobs:
   cleanup:
