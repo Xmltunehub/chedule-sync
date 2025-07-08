@@ -62,10 +62,11 @@ jobs:
       run: |
         export PYTHONPATH="${PYTHONPATH}:${{ github.workspace }}/src"
         # Executar do diretório raiz onde está o run.py
+        OFFSET="${{ inputs.time_offset || '30' }}"
         if [ "${{ inputs.force_process }}" == "true" ]; then
-          python run.py --force --log-level DEBUG --offset ${{ inputs.time_offset || '30' }}
+          python run.py --force --log-level DEBUG --offset "$OFFSET"
         else
-          python run.py --log-level INFO --offset ${{ inputs.time_offset || '30' }}
+          python run.py --log-level INFO --offset "$OFFSET"
         fi
         
     - name: Generate processing report
