@@ -1,10 +1,10 @@
 # 📊 Relatório de Processamento EPG
 
-**Data:** Mon Jul 14 06:58:58 UTC 2025
-**Commit:** 7e70127cedbcf3384951222ad4014f6f0e33deed
+**Data:** Tue Jul 15 06:57:54 UTC 2025
+**Commit:** eeee85eb7090bb211e1a39be9f5ab1b2d9138700
 **Offset aplicado:** 30 segundos
 
-**Arquivo gerado:** adjusted_schedule.xml.gz (1425871 bytes)
+**Arquivo gerado:** adjusted_schedule.xml.gz (1380899 bytes)
 
 ## 📋 Últimas linhas do log:
 ```
